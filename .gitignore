@@ -1,21 +1,53 @@
 # Node modules
 node_modules/
-npm-debug.*
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 
 # Expo
 .expo/
 dist/
 web-build/
-.expo-shared/
 
-# Environment variables and secrets
-.env
-.env.*
-!.env.example
+# Native
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# Debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
 
 # macOS
 .DS_Store
 *.pem
+
+# Local Netlify folder
+.netlify
+
+# TypeScript
+*.tsbuildinfo
+
+# Temporary files
+*.swp
+*.swo
+.tmp/
+temp/
+tmp/
 
 # Xcode
 *.pbxuser
@@ -47,39 +79,8 @@ local.properties
 # Testing
 coverage/
 
-# TypeScript
-*.tsbuildinfo
-
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-lerna-debug.log*
-
-# Temporary files
-*.swp
-*.swo
-*.tmp
-*.temp
-
-# Editor directories and files
-.idea/
-.vscode/
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
-
 # Expo
-*.jks
-*.p8
-*.p12
-*.key
-*.mobileprovision
-*.orig.*
+.expo-shared/
 
 # iOS
 ios/Pods/
@@ -94,6 +95,4 @@ android/app/src/main/res/drawable-*/node_modules*
 android/app/src/main/res/raw/node_modules*
 android/app/.cxx/
 *.hprof
-node_modules
-node_modules
 node_modules
