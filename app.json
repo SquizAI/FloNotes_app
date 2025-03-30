@@ -1,14 +1,15 @@
 {
   "expo": {
-    "name": "AI Notes App",
-    "slug": "ai-notes-app",
+    "name": "AI Notes",
+    "slug": "ai-notes",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#3F51B5"
+      "backgroundColor": "#4F5BD5"
     },
     "updates": {
       "fallbackToCacheTimeout": 0
@@ -17,16 +18,39 @@
       "**/*"
     ],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "This app uses the microphone to record audio for transcription."
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#3F51B5"
-      }
+        "backgroundColor": "#4F5BD5"
+      },
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Allow $(PRODUCT_NAME) to access your microphone."
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "your-project-id"
+      },
+      "OPENAI_API_KEY": "${process.env.OPENAI_API_KEY}",
+      "GOOGLE_AI_API_KEY": "${process.env.GOOGLE_AI_API_KEY}",
+      "DEEPGRAM_API_KEY": "${process.env.DEEPGRAM_API_KEY}"
+    },
+    "newArchEnabled": true
   }
 } 

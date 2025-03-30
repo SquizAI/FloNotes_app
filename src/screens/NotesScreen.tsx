@@ -11,8 +11,14 @@ import {
   SafeAreaView,
   FlatList,
   Share,
+  KeyboardAvoidingView,
+  Platform,
+  StatusBar,
+  Dimensions,
 } from 'react-native';
-import { extractTasksFromText, categorizeTasksAndSuggestNotes, openai } from '../../lib/ai';
+import { extractTasksFromText, categorizeTasksAndSuggestNotes, enhanceTranscribedText } from '../../lib/ai';
+import AudioRecorder from '../components/AudioRecorder';
+import { Ionicons } from '@expo/vector-icons';
 
 // Icons would go here in a real app
 const CATEGORY_ICONS: {[key: string]: string} = {
@@ -32,6 +38,10 @@ const FOOD_CATEGORIES = [
   'produce', 'dairy', 'meat', 'seafood', 'frozen', 'pantry', 
   'bakery', 'beverages', 'snacks', 'spices', 'other'
 ];
+
+// Get screen dimensions
+const { width, height } = Dimensions.get('window');
+const isTablet = width >= 768; // Basic check for tablet size
 
 export default function NotesScreen() {
   const [inputText, setInputText] = useState('');
@@ -55,6 +65,9 @@ export default function NotesScreen() {
   const [unifiedGroceryList, setUnifiedGroceryList] = useState<{
     [category: string]: Array<{text: string; done: boolean; recipeSource?: string}>;
   }>({});
+
+  // Track if input is expanded
+  const [isInputExpanded, setIsInputExpanded] = useState(false);
 
   // Update unified grocery list whenever notes change
   useEffect(() => {
@@ -98,87 +111,82 @@ export default function NotesScreen() {
           if (!groceryItems[category].some(item => item.text.toLowerCase() === task.text.toLowerCase())) {
             groceryItems[category].push({
               text: task.text,
-              done: task.done,
+              done: task.done
             });
           }
         });
       }
     });
     
-    // Remove empty categories
+    // Only keep categories with items
+    const filledCategories: {[category: string]: Array<{text: string; done: boolean; recipeSource?: string}>} = {};
+    
     Object.keys(groceryItems).forEach(category => {
-      if (groceryItems[category].length === 0) {
-        delete groceryItems[category];
+      if (groceryItems[category].length > 0) {
+        filledCategories[category] = groceryItems[category];
       }
     });
     
-    setUnifiedGroceryList(groceryItems);
+    setUnifiedGroceryList(filledCategories);
   }, [notes]);
 
-  // Categorize a food item into the appropriate grocery section
+  // Simple food categorization logic
   const categorizeFoodItem = (item: string): string => {
-    item = item.toLowerCase();
+    const lowerItem = item.toLowerCase();
     
-    // Very basic categorization - in a real app, this would use a more sophisticated approach
-    if (item.includes('fruit') || item.includes('vegetable') || 
-        item.includes('lettuce') || item.includes('tomato') || 
-        item.includes('onion') || item.includes('potato')) {
-      return 'produce';
-    } else if (item.includes('milk') || item.includes('cheese') || 
-              item.includes('yogurt') || item.includes('butter') || 
-              item.includes('cream')) {
+    // Basic categorization based on keywords
+    if (lowerItem.includes('milk') || lowerItem.includes('cheese') || lowerItem.includes('yogurt') || lowerItem.includes('cream')) {
       return 'dairy';
-    } else if (item.includes('chicken') || item.includes('beef') || 
-              item.includes('pork') || item.includes('turkey')) {
+    } else if (lowerItem.includes('apple') || lowerItem.includes('banana') || lowerItem.includes('vegetable') || lowerItem.includes('lettuce') || lowerItem.includes('tomato') || lowerItem.includes('onion')) {
+      return 'produce';
+    } else if (lowerItem.includes('chicken') || lowerItem.includes('beef') || lowerItem.includes('pork')) {
       return 'meat';
-    } else if (item.includes('fish') || item.includes('shrimp') || 
-              item.includes('salmon') || item.includes('tuna')) {
+    } else if (lowerItem.includes('fish') || lowerItem.includes('shrimp') || lowerItem.includes('salmon')) {
       return 'seafood';
-    } else if (item.includes('frozen') || item.includes('ice cream')) {
+    } else if (lowerItem.includes('ice') || lowerItem.includes('frozen')) {
       return 'frozen';
-    } else if (item.includes('flour') || item.includes('sugar') || 
-              item.includes('oil') || item.includes('pasta') || 
-              item.includes('can') || item.includes('sauce')) {
-      return 'pantry';
-    } else if (item.includes('bread') || item.includes('bagel') || 
-              item.includes('muffin') || item.includes('bakery')) {
+    } else if (lowerItem.includes('bread') || lowerItem.includes('bagel') || lowerItem.includes('muffin')) {
       return 'bakery';
-    } else if (item.includes('juice') || item.includes('soda') || 
-              item.includes('water') || item.includes('coffee') || 
-              item.includes('tea')) {
-      return 'beverages';
-    } else if (item.includes('chip') || item.includes('cookie') || 
-              item.includes('crackers') || item.includes('nuts')) {
-      return 'snacks';
-    } else if (item.includes('spice') || item.includes('herb') || 
-              item.includes('salt') || item.includes('pepper') || 
-              item.includes('seasoning')) {
+    } else if (lowerItem.includes('salt') || lowerItem.includes('pepper') || lowerItem.includes('spice') || lowerItem.includes('herb')) {
       return 'spices';
+    } else if (lowerItem.includes('soda') || lowerItem.includes('juice') || lowerItem.includes('water') || lowerItem.includes('drink')) {
+      return 'beverages';
+    } else if (lowerItem.includes('chip') || lowerItem.includes('cookie') || lowerItem.includes('cracker')) {
+      return 'snacks';
+    } else if (lowerItem.includes('flour') || lowerItem.includes('sugar') || lowerItem.includes('rice') || lowerItem.includes('pasta') || lowerItem.includes('can')) {
+      return 'pantry';
     }
     
+    // Default to other
     return 'other';
   };
 
-  // Share unified grocery list
+  // Share the grocery list
   const shareGroceryList = async () => {
-    let message = "Shopping List:\n\n";
-    
-    Object.keys(unifiedGroceryList).forEach(category => {
-      if (unifiedGroceryList[category].length > 0) {
-        message += `${category.toUpperCase()}:\n`;
-        
-        unifiedGroceryList[category].forEach(item => {
-          message += `- ${item.text}${item.recipeSource ? ` (for ${item.recipeSource})` : ''}\n`;
-        });
-        
-        message += '\n';
-      }
-    });
-    
     try {
+      // Format grocery list for sharing
+      let message = "📝 My Grocery List:\n\n";
+      
+      Object.keys(unifiedGroceryList).forEach(category => {
+        if (unifiedGroceryList[category].length > 0) {
+          // Add category header
+          message += `📌 ${category.toUpperCase()}:\n`;
+          
+          // Add items
+          unifiedGroceryList[category].forEach(item => {
+            message += `${item.done ? '✅' : '⬜'} ${item.text}\n`;
+            if (item.recipeSource) {
+              message += `   (for ${item.recipeSource})\n`;
+            }
+          });
+          
+          message += '\n';
+        }
+      });
+      
       await Share.share({
-        message,
-        title: 'My Shopping List'
+        message: message,
+        title: 'My Grocery List'
       });
     } catch (error) {
       console.error('Error sharing grocery list:', error);
@@ -186,289 +194,299 @@ export default function NotesScreen() {
     }
   };
 
-  // Detect if text is likely a recipe request
+  // Detect if the text might be a recipe request
   const isRecipeRequest = (text: string): boolean => {
     const lowerText = text.toLowerCase();
-    return lowerText.includes('recipe') || 
-           lowerText.includes('how to make') || 
-           lowerText.includes('how do i make') || 
-           lowerText.includes('ingredients for') ||
-           (lowerText.includes('make') && lowerText.includes('cook'));
+    return (
+      lowerText.includes('recipe') ||
+      lowerText.includes('cook') ||
+      lowerText.includes('bake') ||
+      lowerText.includes('how to make')
+    );
   };
 
-  // Generate a detailed recipe if needed
+  // Generate recipe details from text
   const generateRecipeDetails = async (text: string, title: string) => {
     try {
-      console.log('Generating recipe details...');
-      const completion = await openai.chat.completions.create({
-        messages: [
-          {
-            role: 'system',
-            content: `Create a detailed recipe based on the user's request. Return a JSON object with the following structure:
-{
-  "title": "Recipe title",
-  "ingredients": ["ingredient 1", "ingredient 2", ...],
-  "instructions": ["step 1", "step 2", ...],
-  "prepTime": "preparation time (e.g., 15 minutes)",
-  "cookTime": "cooking time (e.g., 30 minutes)",
-  "servings": number of servings
-}
-
-Ensure that ingredients are listed as individual items with quantities, and steps are detailed and clear.`
-          },
-          { role: 'user', content: text }
-        ],
-        model: 'gpt-4o',
-        response_format: { type: 'json_object' },
-      });
-
-      return JSON.parse(completion.choices[0].message.content!);
+      setIsLoading(true);
+      
+      const completion = await categorizeTasksAndSuggestNotes(`Recipe for ${text}`);
+      
+      // Create a recipe object
+      let recipeDetails = {
+        ingredients: [] as string[],
+        instructions: [] as string[],
+        prepTime: '30 mins',
+        cookTime: '45 mins',
+        servings: 4
+      };
+      
+      // Extract information from completion
+      if (completion.tasks && completion.tasks.length > 0) {
+        // Identify ingredients and instructions
+        const ingredientTasks = completion.tasks.filter(task => 
+          !task.text.toLowerCase().includes('preheat') && 
+          !task.text.toLowerCase().includes('mix') &&
+          !task.text.toLowerCase().includes('stir') &&
+          !task.text.toLowerCase().includes('cook') &&
+          !task.text.toLowerCase().includes('bake')
+        );
+        
+        const instructionTasks = completion.tasks.filter(task => 
+          task.text.toLowerCase().includes('preheat') || 
+          task.text.toLowerCase().includes('mix') ||
+          task.text.toLowerCase().includes('stir') ||
+          task.text.toLowerCase().includes('cook') ||
+          task.text.toLowerCase().includes('bake')
+        );
+        
+        recipeDetails.ingredients = ingredientTasks.map(task => task.text);
+        recipeDetails.instructions = instructionTasks.map(task => task.text);
+        
+        // If we couldn't identify instructions, use all tasks as ingredients
+        if (recipeDetails.instructions.length === 0) {
+          recipeDetails.ingredients = completion.tasks.map(task => task.text);
+          recipeDetails.instructions = ['Cook according to your preferred method.'];
+        }
+      }
+      
+      return recipeDetails;
     } catch (error) {
       console.error('Error generating recipe details:', error);
-      return {
-        title,
-        ingredients: [],
-        instructions: ['Failed to generate recipe instructions'],
-        prepTime: 'Unknown',
-        cookTime: 'Unknown',
-        servings: 0
-      };
+      Alert.alert('Error', 'Failed to generate recipe details');
+      return null;
+    } finally {
+      setIsLoading(false);
     }
   };
 
   // Extract grocery items from text
   const extractGroceryItems = async (text: string) => {
     try {
-      const completion = await openai.chat.completions.create({
-        messages: [
-          {
-            role: 'system',
-            content: `Extract grocery items from the text and return a JSON array of strings, each containing one grocery item with its quantity. Only include actual grocery items, not tasks or other content.`
-          },
-          { role: 'user', content: text }
-        ],
-        model: 'gpt-4o',
-        response_format: { type: 'json_object' },
-      });
-
-      return JSON.parse(completion.choices[0].message.content!).items || [];
-    } catch (error) {
-      console.error('Error extracting grocery items:', error);
-      return [];
-    }
-  };
-
-  // Enhanced task extraction with recipe and grocery detection
-  const handleExtractTasks = async () => {
-    if (!inputText.trim()) {
-      Alert.alert('Empty Input', 'Please enter some text to extract tasks.');
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      // Check if this is a recipe request
-      if (isRecipeRequest(inputText)) {
-        // Generate recipe details
-        const recipeDetails = await generateRecipeDetails(inputText, "Recipe");
-        
-        // Create a recipe note
-        const recipeNote = {
-          id: Math.random().toString(),
-          title: recipeDetails.title || "Recipe",
-          category: "recipe",
-          tasks: [], // Recipe doesn't use regular tasks
-          isRecipe: true,
-          recipeDetails
+      setIsLoading(true);
+      
+      // Use the AI to extract grocery items
+      const completion = await extractTasksFromText(text);
+      
+      if (completion.tasks && completion.tasks.length > 0) {
+        // Create a new note for the grocery list
+        const newNote = {
+          id: `note-${Date.now()}`,
+          title: 'Grocery List',
+          category: 'grocery',
+          tasks: completion.tasks.map(task => ({
+            ...task,
+            category: 'grocery'
+          }))
         };
         
-        setNotes([...notes, recipeNote]);
-        
-        // Also create a grocery note with ingredients
-        if (recipeDetails.ingredients && recipeDetails.ingredients.length > 0) {
-          const groceryNote = {
-            id: Math.random().toString(),
-            title: `Ingredients for ${recipeDetails.title}`,
-            category: "grocery",
-            tasks: recipeDetails.ingredients.map(ingredient => ({
-              text: ingredient,
-              done: false,
-              category: "grocery"
-            }))
-          };
-          
-          setNotes(prevNotes => [...prevNotes, groceryNote]);
-        }
-        
+        setNotes(prevNotes => [newNote, ...prevNotes]);
         setInputText('');
-      } else {
-        // Check if this is specifically a grocery list
-        if (inputText.toLowerCase().includes('grocery') || 
-            inputText.toLowerCase().includes('shopping list') || 
-            inputText.toLowerCase().includes('buy at store')) {
-          
-          // Extract grocery items
-          const groceryItems = await extractGroceryItems(inputText);
-          
-          if (groceryItems && groceryItems.length > 0) {
-            const groceryNote = {
-              id: Math.random().toString(),
-              title: "Shopping List",
-              category: "grocery",
-              tasks: groceryItems.map(item => ({
-                text: item,
-                done: false,
-                category: "grocery"
-              }))
-            };
-            
-            setNotes([...notes, groceryNote]);
-            setInputText('');
-          } else {
-            // Fall back to regular categorization
-            await processCategorizedTasks();
-          }
-        } else {
-          // Regular task processing
-          await processCategorizedTasks();
-        }
       }
     } catch (error) {
-      console.error('Error in task extraction:', error);
-      
-      // Fallback to basic extraction
-      try {
-        console.log('Falling back to basic extraction...');
-        const basicResult = await extractTasksFromText(inputText);
-        
-        if (basicResult && basicResult.tasks) {
-          const newNote = {
-            id: Math.random().toString(),
-            title: 'Tasks',
-            category: 'general',
-            tasks: basicResult.tasks.map((task: any) => ({
-              ...task,
-              category: 'general'
-            }))
-          };
-          
-          setNotes([...notes, newNote]);
-          setInputText('');
-        }
-      } catch (fallbackError) {
-        Alert.alert(
-          'Extraction Error',
-          'There was a problem extracting tasks. Please check your API key or try again later.'
-        );
-      }
+      console.error('Error extracting grocery items:', error);
+      Alert.alert('Error', 'Failed to process grocery list');
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Process text with the categorization function
-  const processCategorizedTasks = async () => {
-    const result = await categorizeTasksAndSuggestNotes(inputText);
+  // Process dictation result
+  const handleDictationResult = async (text: string) => {
+    if (!text) return;
     
-    if (result && result.tasks && result.noteGroups) {
-      // Create notes from the note groups suggested by AI
-      const newNotes = result.noteGroups.map(group => {
-        // Get tasks for this group
-        const noteTasks = group.taskIndices.map(index => result.tasks[index]);
-        
-        return {
-          id: Math.random().toString(),
-          title: group.title,
-          category: group.category,
-          tasks: noteTasks
-        };
-      });
+    try {
+      // Enhance the transcribed text
+      const enhancedText = await enhanceTranscribedText(text);
       
-      setNotes([...notes, ...newNotes]);
-      setInputText('');
+      // Set the enhanced text in the input field
+      setInputText(enhancedText);
+      
+      // Expand the input field to show the transcribed text
+      setIsInputExpanded(true);
+    } catch (error) {
+      console.error('Error processing dictation:', error);
+      // Still set the original text if enhancement fails
+      setInputText(text);
+      setIsInputExpanded(true);
     }
   };
 
-  // Toggle task completion
-  const toggleTaskDone = (noteId: string, taskIndex: number) => {
-    setNotes(notes.map(note => {
-      if (note.id === noteId) {
-        const updatedTasks = [...note.tasks];
-        updatedTasks[taskIndex] = {
-          ...updatedTasks[taskIndex], 
-          done: !updatedTasks[taskIndex].done
-        };
+  // Handle extracting tasks from inputText
+  const handleExtractTasks = async () => {
+    if (!inputText.trim()) {
+      Alert.alert('Empty Input', 'Please enter some text to extract tasks from.');
+      return;
+    }
+    
+    try {
+      setIsLoading(true);
+      
+      // Check if this might be a recipe request
+      if (isRecipeRequest(inputText)) {
+        // Extract recipe title from the text
+        const titleMatch = inputText.match(/recipe for ([\w\s]+)/i) || 
+                          inputText.match(/how to (make|cook|bake) ([\w\s]+)/i);
         
-        return {
-          ...note,
-          tasks: updatedTasks
-        };
+        let recipeTitle = 'Recipe';
+        if (titleMatch) {
+          recipeTitle = titleMatch[1] || titleMatch[2] || 'Recipe';
+          // Capitalize first letter
+          recipeTitle = recipeTitle.charAt(0).toUpperCase() + recipeTitle.slice(1);
+        }
+        
+        // Generate recipe details
+        const recipeDetails = await generateRecipeDetails(inputText, recipeTitle);
+        
+        if (recipeDetails) {
+          // Create a new recipe note
+          const newRecipe = {
+            id: `recipe-${Date.now()}`,
+            title: recipeTitle,
+            category: 'recipe',
+            tasks: [],
+            isRecipe: true,
+            recipeDetails
+          };
+          
+          setNotes(prevNotes => [newRecipe, ...prevNotes]);
+          setInputText('');
+        }
+      } 
+      // Check if this is a grocery list
+      else if (inputText.toLowerCase().includes('grocery') || 
+               inputText.toLowerCase().includes('shopping') || 
+               inputText.toLowerCase().includes('buy')) {
+        await extractGroceryItems(inputText);
       }
-      return note;
-    }));
+      // Otherwise, try to categorize tasks
+      else {
+        await processCategorizedTasks();
+      }
+    } catch (error) {
+      console.error('Error processing input:', error);
+      Alert.alert('Error', 'Failed to process input');
+    } finally {
+      setIsLoading(false);
+      setIsInputExpanded(false);
+    }
   };
 
-  // Toggle grocery item completion
-  const toggleGroceryItemDone = (category: string, index: number) => {
-    setUnifiedGroceryList(prev => {
-      const updated = {...prev};
+  // Process categorized tasks from input text
+  const processCategorizedTasks = async () => {
+    try {
+      // Get categorized tasks
+      const completion = await categorizeTasksAndSuggestNotes(inputText);
       
-      if (updated[category] && updated[category][index]) {
-        updated[category] = [...updated[category]];
-        updated[category][index] = {
-          ...updated[category][index],
-          done: !updated[category][index].done
-        };
+      if (completion && completion.noteGroups && completion.noteGroups.length > 0) {
+        // Create notes based on suggested groupings
+        const newNotes = completion.noteGroups.map(group => {
+          const groupTasks = group.taskIndices.map(index => completion.tasks[index]);
+          
+          return {
+            id: `note-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+            title: group.title,
+            category: group.category,
+            tasks: groupTasks
+          };
+        });
+        
+        setNotes(prevNotes => [...newNotes, ...prevNotes]);
+        setInputText('');
       }
+    } catch (error) {
+      console.error('Error categorizing tasks:', error);
+      Alert.alert('Error', 'Failed to categorize tasks');
+    }
+  };
+
+  // Toggle a task's done status
+  const toggleTaskDone = (noteId: string, taskIndex: number) => {
+    setNotes(prevNotes => 
+      prevNotes.map(note => {
+        if (note.id === noteId) {
+          const updatedTasks = [...note.tasks];
+          updatedTasks[taskIndex] = {
+            ...updatedTasks[taskIndex],
+            done: !updatedTasks[taskIndex].done
+          };
+          
+          return {
+            ...note,
+            tasks: updatedTasks
+          };
+        }
+        return note;
+      })
+    );
+  };
+
+  // Toggle a grocery item's done status
+  const toggleGroceryItemDone = (category: string, index: number) => {
+    setUnifiedGroceryList(prevList => {
+      const updatedCategory = [...prevList[category]];
+      updatedCategory[index] = {
+        ...updatedCategory[index],
+        done: !updatedCategory[index].done
+      };
       
-      return updated;
+      return {
+        ...prevList,
+        [category]: updatedCategory
+      };
     });
   };
 
-  // Get icon based on category
+  // Get an icon for a task category
   const getTaskIcon = (task: {text: string, category: string}) => {
-    return CATEGORY_ICONS[task.category.toLowerCase()] || CATEGORY_ICONS.general;
+    return CATEGORY_ICONS[task.category.toLowerCase()] || '📝';
   };
 
   // Render a recipe card
   const renderRecipeCard = ({ item }: { item: any }) => {
     if (!item.isRecipe || !item.recipeDetails) {
-      return renderNoteCard({ item });
+      return null;
     }
+    
+    const { recipeDetails } = item;
     
     return (
       <View style={styles.recipeCard}>
         <View style={styles.recipeHeader}>
           <Text style={styles.recipeTitle}>{item.title}</Text>
-          <Text style={styles.recipeCategory}>RECIPE</Text>
+          <Text style={styles.recipeCategory}>
+            {CATEGORY_ICONS[item.category.toLowerCase()] || '📝'} {item.category}
+          </Text>
         </View>
         
         <View style={styles.recipeMetadata}>
           <View style={styles.recipeMetaItem}>
             <Text style={styles.recipeMetaLabel}>Prep Time</Text>
-            <Text style={styles.recipeMetaValue}>{item.recipeDetails.prepTime}</Text>
+            <Text style={styles.recipeMetaValue}>{recipeDetails.prepTime || '30 mins'}</Text>
           </View>
           <View style={styles.recipeMetaItem}>
             <Text style={styles.recipeMetaLabel}>Cook Time</Text>
-            <Text style={styles.recipeMetaValue}>{item.recipeDetails.cookTime}</Text>
+            <Text style={styles.recipeMetaValue}>{recipeDetails.cookTime || '45 mins'}</Text>
           </View>
           <View style={styles.recipeMetaItem}>
             <Text style={styles.recipeMetaLabel}>Servings</Text>
-            <Text style={styles.recipeMetaValue}>{item.recipeDetails.servings}</Text>
+            <Text style={styles.recipeMetaValue}>{recipeDetails.servings || 4}</Text>
           </View>
         </View>
         
         <View style={styles.recipeSection}>
           <Text style={styles.recipeSectionTitle}>Ingredients</Text>
-          {item.recipeDetails.ingredients.map((ingredient: string, index: number) => (
-            <Text key={index} style={styles.recipeIngredient}>• {ingredient}</Text>
+          {recipeDetails.ingredients.map((ingredient, index) => (
+            <Text key={`ingredient-${index}`} style={styles.recipeIngredient}>
+              • {ingredient}
+            </Text>
           ))}
         </View>
         
         <View style={styles.recipeSection}>
           <Text style={styles.recipeSectionTitle}>Instructions</Text>
-          {item.recipeDetails.instructions.map((instruction: string, index: number) => (
-            <View key={index} style={styles.recipeInstructionContainer}>
+          {recipeDetails.instructions.map((instruction, index) => (
+            <View key={`instruction-${index}`} style={styles.recipeInstructionContainer}>
               <Text style={styles.recipeInstructionNumber}>{index + 1}</Text>
               <Text style={styles.recipeInstruction}>{instruction}</Text>
             </View>
@@ -478,19 +496,19 @@ Ensure that ingredients are listed as individual items with quantities, and step
     );
   };
 
-  // Render a regular note card
+  // Render a standard note card
   const renderNoteCard = ({ item }: { item: any }) => (
     <View style={styles.noteCard}>
       <View style={styles.noteHeader}>
-        <Text style={styles.noteTitle}>
-          {CATEGORY_ICONS[item.category.toLowerCase()] || CATEGORY_ICONS.general} {item.title}
+        <Text style={styles.noteTitle}>{item.title}</Text>
+        <Text style={styles.noteCategory}>
+          {CATEGORY_ICONS[item.category.toLowerCase()] || '📝'} {item.category}
         </Text>
-        <Text style={styles.noteCategory}>{item.category}</Text>
       </View>
       
       {item.tasks.map((task: any, index: number) => (
-        <TouchableOpacity
-          key={index}
+        <TouchableOpacity 
+          key={`task-${index}`}
           style={styles.taskItem}
           onPress={() => toggleTaskDone(item.id, index)}
         >
@@ -498,7 +516,7 @@ Ensure that ingredients are listed as individual items with quantities, and step
             {task.done && <View style={styles.taskCheckboxInner} />}
           </View>
           <Text style={[styles.taskText, task.done && styles.taskTextDone]}>
-            {getTaskIcon(task)} {task.text}
+            {task.text}
           </Text>
         </TouchableOpacity>
       ))}
@@ -507,20 +525,35 @@ Ensure that ingredients are listed as individual items with quantities, and step
 
   // Render the unified grocery list card
   const renderGroceryListCard = () => {
-    if (Object.keys(unifiedGroceryList).length === 0) return null;
+    // Count total items and completed items
+    let totalItems = 0;
+    let completedItems = 0;
+    
+    Object.keys(unifiedGroceryList).forEach(category => {
+      totalItems += unifiedGroceryList[category].length;
+      completedItems += unifiedGroceryList[category].filter(item => item.done).length;
+    });
+    
+    const progress = totalItems > 0 ? (completedItems / totalItems) * 100 : 0;
     
     return (
       <View style={styles.groceryListCard}>
         <View style={styles.groceryListHeader}>
           <Text style={styles.groceryListTitle}>
-            {CATEGORY_ICONS.grocery} Unified Shopping List
+            🛒 Grocery List {totalItems > 0 && `(${completedItems}/${totalItems})`}
           </Text>
+          
           <TouchableOpacity 
             style={styles.shareButton}
             onPress={shareGroceryList}
           >
             <Text style={styles.shareButtonText}>Share</Text>
           </TouchableOpacity>
+        </View>
+        
+        {/* Progress bar */}
+        <View style={styles.progressBarContainer}>
+          <View style={[styles.progressBar, { width: `${progress}%` }]} />
         </View>
         
         {Object.keys(unifiedGroceryList).map(category => (
@@ -530,18 +563,20 @@ Ensure that ingredients are listed as individual items with quantities, and step
             </Text>
             
             {unifiedGroceryList[category].map((item, index) => (
-              <TouchableOpacity
-                key={index}
+              <TouchableOpacity 
+                key={`${category}-item-${index}`}
                 style={styles.groceryItem}
                 onPress={() => toggleGroceryItemDone(category, index)}
               >
                 <View style={[styles.taskCheckbox, item.done && styles.taskCheckboxChecked]}>
                   {item.done && <View style={styles.taskCheckboxInner} />}
                 </View>
+                
                 <View style={styles.groceryItemContent}>
                   <Text style={[styles.groceryItemText, item.done && styles.taskTextDone]}>
                     {item.text}
                   </Text>
+                  
                   {item.recipeSource && (
                     <Text style={styles.groceryItemSource}>
                       For: {item.recipeSource}
@@ -556,65 +591,84 @@ Ensure that ingredients are listed as individual items with quantities, and step
     );
   };
 
-  // Render item for FlatList
-  const renderItem = ({ item }: { item: any }) => {
-    if (item.isRecipe) {
-      return renderRecipeCard({ item });
-    } else {
-      return renderNoteCard({ item });
-    }
+  // Render all notes in a list
+  const renderNotesList = () => {
+    return notes.map(item => (
+      <React.Fragment key={item.id}>
+        {item.isRecipe ? renderRecipeCard({ item }) : renderNoteCard({ item })}
+      </React.Fragment>
+    ));
   };
 
   return (
     <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="light-content" />
       <View style={styles.header}>
         <Text style={styles.headerText}>AI Notes</Text>
       </View>
 
-      <View style={styles.card}>
-        <TextInput
-          style={styles.input}
-          placeholder="Enter notes, tasks, recipes, or shopping lists..."
-          value={inputText}
-          onChangeText={setInputText}
-          multiline
-          numberOfLines={6}
-          placeholderTextColor="#888"
-        />
-
-        <TouchableOpacity 
-          style={styles.button}
-          onPress={handleExtractTasks}
-          disabled={isLoading}
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.keyboardAvoidingContainer}
+      >
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollViewContent}
+          showsVerticalScrollIndicator={true}
+          bounces={true}
         >
-          {isLoading ? (
-            <ActivityIndicator color="#fff" />
+          <View style={styles.card}>
+            <TextInput
+              style={[styles.input, isInputExpanded && styles.inputExpanded]}
+              placeholder="Enter notes, tasks, recipes, or shopping lists..."
+              value={inputText}
+              onChangeText={setInputText}
+              multiline
+              numberOfLines={isInputExpanded ? 8 : 4}
+              placeholderTextColor="#888"
+              onFocus={() => setIsInputExpanded(true)}
+            />
+
+            <View style={styles.inputActions}>
+              <AudioRecorder 
+                onTranscriptionComplete={handleDictationResult}
+                isLoading={isLoading}
+                setIsLoading={setIsLoading}
+              />
+
+              <TouchableOpacity 
+                style={[styles.button, isLoading && styles.buttonDisabled]}
+                onPress={handleExtractTasks}
+                disabled={isLoading || !inputText.trim()}
+              >
+                {isLoading ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={styles.buttonText}>Extract Tasks</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {Object.keys(unifiedGroceryList).length > 0 && renderGroceryListCard()}
+
+          {notes.length > 0 ? (
+            <View style={styles.notesContainer}>
+              {renderNotesList()}
+            </View>
           ) : (
-            <Text style={styles.buttonText}>Extract Tasks</Text>
+            <View style={styles.emptyState}>
+              <Ionicons name="document-text-outline" size={60} color="#AAA" />
+              <Text style={styles.emptyStateText}>
+                No notes yet
+              </Text>
+              <Text style={styles.emptyStateSubtext}>
+                Try dictating your notes or type them in the field above
+              </Text>
+            </View>
           )}
-        </TouchableOpacity>
-      </View>
-
-      {Object.keys(unifiedGroceryList).length > 0 && renderGroceryListCard()}
-
-      {notes.length > 0 ? (
-        <FlatList
-          data={notes}
-          renderItem={renderItem}
-          keyExtractor={item => item.id}
-          style={styles.notesList}
-          contentContainerStyle={styles.notesListContent}
-        />
-      ) : (
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyStateText}>
-            Enter some text above to extract tasks and create notes.
-          </Text>
-          <Text style={styles.emptyStateSubtext}>
-            Try recipes, shopping lists, work tasks, or home to-dos.
-          </Text>
-        </View>
-      )}
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -622,22 +676,36 @@ Ensure that ingredients are listed as individual items with quantities, and step
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#f8f9fa',
   },
   header: {
     backgroundColor: '#4F5BD5',
     padding: 16,
     alignItems: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
   },
   headerText: {
     color: 'white',
     fontSize: 24,
     fontWeight: 'bold',
   },
+  keyboardAvoidingContainer: {
+    flex: 1,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollViewContent: {
+    paddingBottom: 40, // Add padding at the bottom to ensure content is scrollable past the keyboard
+  },
   card: {
     backgroundColor: 'white',
     margin: 16,
-    borderRadius: 8,
+    borderRadius: 12,
     padding: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -647,36 +715,47 @@ const styles = StyleSheet.create({
   },
   input: {
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 4,
+    borderColor: '#e0e0e0',
+    borderRadius: 8,
     padding: 12,
     fontSize: 16,
-    minHeight: 120,
+    minHeight: 100,
     textAlignVertical: 'top',
+    backgroundColor: '#fafafa',
+  },
+  inputExpanded: {
+    minHeight: 150,
+  },
+  inputActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 16,
+    alignItems: 'center',
   },
   button: {
     backgroundColor: '#4F5BD5',
-    borderRadius: 4,
-    padding: 14,
+    borderRadius: 25,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
     alignItems: 'center',
-    marginTop: 16,
+    justifyContent: 'center',
+  },
+  buttonDisabled: {
+    backgroundColor: '#a0a0a0',
   },
   buttonText: {
     color: 'white',
     fontSize: 16,
     fontWeight: 'bold',
   },
-  notesList: {
-    flex: 1,
-  },
-  notesListContent: {
+  notesContainer: {
     padding: 16,
     paddingTop: 0,
   },
   // Recipe card styles
   recipeCard: {
     backgroundColor: 'white',
-    borderRadius: 8,
+    borderRadius: 12,
     padding: 16,
     marginBottom: 16,
     shadowColor: '#000',
@@ -775,7 +854,7 @@ const styles = StyleSheet.create({
   // Regular note card styles
   noteCard: {
     backgroundColor: 'white',
-    borderRadius: 8,
+    borderRadius: 12,
     padding: 16,
     marginBottom: 16,
     shadowColor: '#000',
@@ -835,6 +914,7 @@ const styles = StyleSheet.create({
   taskText: {
     fontSize: 16,
     flex: 1,
+    color: '#333',
   },
   taskTextDone: {
     textDecorationLine: 'line-through',
@@ -843,7 +923,7 @@ const styles = StyleSheet.create({
   // Grocery list styles
   groceryListCard: {
     backgroundColor: 'white',
-    borderRadius: 8,
+    borderRadius: 12,
     padding: 16,
     margin: 16,
     marginTop: 0,
@@ -866,6 +946,17 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     color: '#222',
+  },
+  progressBarContainer: {
+    height: 8,
+    backgroundColor: '#eee',
+    borderRadius: 4,
+    marginBottom: 16,
+    overflow: 'hidden',
+  },
+  progressBar: {
+    height: '100%',
+    backgroundColor: '#4CAF50',
   },
   shareButton: {
     backgroundColor: '#4F5BD5',
@@ -909,17 +1000,17 @@ const styles = StyleSheet.create({
   },
   // Empty state styles
   emptyState: {
-    flex: 1,
-    justifyContent: 'center',
+    padding: 40,
     alignItems: 'center',
-    padding: 16,
+    justifyContent: 'center',
+    minHeight: 300,
   },
   emptyStateText: {
     fontSize: 18,
     fontWeight: 'bold',
     color: '#555',
     textAlign: 'center',
-    marginBottom: 8,
+    marginVertical: 8,
   },
   emptyStateSubtext: {
     fontSize: 14,
